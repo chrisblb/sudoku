@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Sudoku</title>
+<!-- PWA : installation sur écran d'accueil -->
+<meta name="theme-color" content="#4f46e5">
+<link rel="manifest" href="sudoku-manifest.json">
+<link rel="apple-touch-icon" href="sudoku-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sudoku">
+<meta name="application-name" content="Sudoku">
+
+<style>
+  :root{
+    --bg:#eef2f7;
+    --card:#ffffff;
+    --ink:#0f172a;
+    --muted:#64748b;
+    --thin:#cbd5e1;
+    --thick:#334155;
+    --accent:#4f46e5;
+    --accent-soft:#e0e7ff;
+    --sel:#c7d2fe;
+    --peer:#eef2ff;
+    --same:#bfdbfe;
+    --given:#0f172a;
+    --user:#4f46e5;
+    --ok:#059669;
+    --warn:#b45309;
+    --board: min(92vw, 58vh, 460px);
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    height:100%;
+    background:var(--bg);
+    font-family:-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    color:var(--ink);
+    overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+    touch-action:manipulation;
+  }
+  body{
+    display:flex; flex-direction:column; align-items:center;
+    padding:14px 12px;
+    padding-top:max(14px, env(safe-area-inset-top));
+    padding-bottom:max(14px, env(safe-area-inset-bottom));
+    min-height:100%;
+  }
+
+  header{ width:var(--board); display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+  .titlebar{ display:flex; align-items:baseline; justify-content:space-between; }
+  h1{ font-size:1.5rem; font-weight:800; letter-spacing:.5px; }
+  h1 .sub{ font-size:.78rem; font-weight:600; color:var(--muted); margin-left:6px; letter-spacing:0; }
+
+  /* Sélecteur de difficulté */
+  .diff{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .diff button{
+    font:inherit; font-size:.82rem; font-weight:700;
+    padding:8px 4px; border:1px solid var(--thin); border-radius:10px;
+    background:var(--card); color:var(--muted); cursor:pointer;
+    transition:all .12s;
+  }
+  .diff button.active{ background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 2px 8px rgba(79,70,229,.35); }
+
+  /* Plateau */
+  .board{
+    width:var(--board); height:var(--board);
+    display:grid;
+    grid-template-columns:repeat(9,1fr);
+    grid-template-rows:repeat(9,1fr);
+    background:var(--card);
+    border:2.5px solid var(--thick);
+    border-radius:6px;
+    overflow:hidden;
+    box-shadow:0 10px 30px rgba(15,23,42,.16);
+  }
+  .cell{
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    border-right:1px solid var(--thin);
+    border-bottom:1px solid var(--thin);
+    font-size:calc(var(--board)/16);
+    font-weight:600;
+    color:var(--user);
+    cursor:pointer;
+    background:transparent;
+    transition:background .08s;
+  }
+  .cell.tr{ border-right:2.5px solid var(--thick); }
+  .cell.tb{ border-bottom:2.5px solid var(--thick); }
+  .cell.lc{ border-right:none; }
+  .cell.lr{ border-bottom:none; }
+
+  .cell.given{ color:var(--given); font-weight:800; }
+  .cell.peer{ background:var(--peer); }
+  .cell.same{ background:var(--same); }
+  .cell.sel{ background:var(--sel); }
+  .cell.solved{ color:var(--ok); }
+
+  /* Notes (petits chiffres 3x3) */
+  .notes{
+    position:absolute; inset:0;
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    grid-template-rows:repeat(3,1fr);
+    font-size:calc(var(--board)/42);
+    font-weight:600;
+    color:var(--muted);
+    line-height:1;
+  }
+  .notes span{ display:flex; align-items:center; justify-content:center; }
+
+  /* Bandeau d'état */
+  .status{
+    width:var(--board);
+    min-height:1.4rem;
+    margin:12px 0 10px;
+    text-align:center;
+    font-size:.92rem; font-weight:700; color:var(--muted);
+  }
+  .status.win{ color:var(--ok); font-size:1.1rem; }
+  .status.warn{ color:var(--warn); }
+
+  /* Pavé numérique */
+  .pad{
+    width:var(--board);
+    display:grid; grid-template-columns:repeat(9,1fr); gap:5px;
+  }
+  .pad button{
+    position:relative;
+    font:inherit; font-weight:700;
+    font-size:calc(var(--board)/19);
+    padding:10px 0 13px;
+    border:1px solid var(--thin); border-radius:10px;
+    background:var(--card); color:var(--ink); cursor:pointer;
+    line-height:1;
+  }
+  .pad button:active{ background:var(--accent-soft); }
+  .pad button .rem{
+    position:absolute; left:0; right:0; bottom:3px;
+    font-size:.56rem; font-weight:700; color:var(--muted);
+  }
+  .pad button.done{ opacity:.34; }
+  .pad button.note-mode{ color:var(--accent); }
+
+  /* Actions */
+  .actions{
+    width:var(--board);
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;
+    margin-top:12px;
+  }
+  .actions button{
+    font:inherit; font-size:.92rem; font-weight:700;
+    padding:13px 6px; border-radius:12px; border:1px solid var(--thin);
+    background:var(--card); color:var(--ink); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .actions button:active{ transform:translateY(1px); }
+  #noteBtn.on{ background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 2px 8px rgba(79,70,229,.35); }
+
+  .hint{ width:var(--board); margin-top:14px; text-align:center; font-size:.74rem; color:var(--muted); line-height:1.5; }
+
+  /* Overlay de génération */
+  .gen{ width:var(--board); text-align:center; color:var(--muted); font-weight:700; font-size:.9rem; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="titlebar">
+      <h1>Sudoku<span class="sub" id="diffLabel">Facile</span></h1>
+    </div>
+    <div class="diff" id="diff">
+      <button data-d="facile">Facile</button>
+      <button data-d="moyen">Moyen</button>
+      <button data-d="difficile">Difficile</button>
+      <button data-d="expert">Expert</button>
+    </div>
+  </header>
+
+  <div class="board" id="board" aria-label="Grille de Sudoku"></div>
+
+  <div class="status" id="status"></div>
+
+  <div class="pad" id="pad"></div>
+
+  <div class="actions">
+    <button id="noteBtn">✏️ Crayon</button>
+    <button id="eraseBtn">⌫ Effacer</button>
+    <button id="newBtn">＋ Nouvelle</button>
+  </div>
+
+  <p class="hint">Touchez une case, puis un chiffre.<br>« Crayon » pour annoter en petit.</p>
+
+<script>
+"use strict";
+
+/* ───────────────────────── Outils bits ───────────────────────── */
+const FULL = 0x1FF;                  // 9 bits : chiffres 1..9
+function popcount9(x){ let c=0; while(x){ x&=x-1; c++; } return c; }
+function lowBitDigit(bit){ return (31 - Math.clz32(bit)) + 1; }  // bit puissance de 2 -> chiffre
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+const boxOf = i => (Math.floor(i/9/3)*3) + Math.floor((i%9)/3);
+
+/* ───────────────────── Compteur de solutions (MRV) ─────────────────────
+   Renvoie le nombre de solutions, plafonné à `limit` (2 suffit pour l'unicité). */
+function countSolutions(grid, limit){
+  const g = grid.slice();
+  const rows=new Array(9).fill(0), cols=new Array(9).fill(0), boxes=new Array(9).fill(0);
+  for(let i=0;i<81;i++){
+    const d=g[i];
+    if(d){ const bit=1<<(d-1); rows[(i/9)|0]|=bit; cols[i%9]|=bit; boxes[boxOf(i)]|=bit; }
+  }
+  let count=0;
+  (function bt(){
+    if(count>=limit) return;
+    // case vide avec le moins de candidats
+    let best=-1, bestMask=0, bestCnt=99;
+    for(let i=0;i<81;i++){
+      if(g[i]) continue;
+      const r=(i/9)|0, c=i%9, b=boxOf(i);
+      const avail=(~(rows[r]|cols[c]|boxes[b]))&FULL;
+      const cnt=popcount9(avail);
+      if(cnt===0) return;                 // impasse
+      if(cnt<bestCnt){ bestCnt=cnt; best=i; bestMask=avail; if(cnt===1) break; }
+    }
+    if(best===-1){ count++; return; }     // grille pleine -> 1 solution
+    const r=(best/9)|0, c=best%9, b=boxOf(best);
+    let m=bestMask;
+    while(m){
+      const bit=m&(-m); m^=bit;
+      g[best]=lowBitDigit(bit);
+      rows[r]|=bit; cols[c]|=bit; boxes[b]|=bit;
+      bt();
+      g[best]=0; rows[r]^=bit; cols[c]^=bit; boxes[b]^=bit;
+      if(count>=limit) return;
+    }
+  })();
+  return count;
+}
+
+/* ───────────────────── Grille complète aléatoire ───────────────────── */
+function generateFull(){
+  const g=new Array(81).fill(0);
+  const rows=new Array(9).fill(0), cols=new Array(9).fill(0), boxes=new Array(9).fill(0);
+  (function bt(pos){
+    if(pos===81) return true;
+    const r=(pos/9)|0, c=pos%9, b=boxOf(pos);
+    const avail=(~(rows[r]|cols[c]|boxes[b]))&FULL;
+    const bits=[];
+    let m=avail; while(m){ const bit=m&(-m); m^=bit; bits.push(bit); }
+    shuffle(bits);
+    for(const bit of bits){
+      g[pos]=lowBitDigit(bit);
+      rows[r]|=bit; cols[c]|=bit; boxes[b]|=bit;
+      if(bt(pos+1)) return true;
+      g[pos]=0; rows[r]^=bit; cols[c]^=bit; boxes[b]^=bit;
+    }
+    return false;
+  })(0);
+  return g;
+}
+
+/* ───────────────── Creuser un puzzle à solution unique ─────────────────
+   Retrait symétrique (180°) tant que l'unicité est préservée. */
+function makePuzzle(solution, targetGivens){
+  const puzzle = solution.slice();
+  let givens = 81;
+  // Phase 1 : retrait symétrique (180°) — esthétique, plafonne vers ~28 indices
+  for(const i of shuffle([...Array(81).keys()])){
+    if(givens<=targetGivens) break;
+    const j = 80 - i;                       // case symétrique
+    if(puzzle[i]===0 && puzzle[j]===0) continue;
+    const bi=puzzle[i], bj=puzzle[j];
+    let removed=0;
+    if(puzzle[i]!==0){ puzzle[i]=0; removed++; }
+    if(j!==i && puzzle[j]!==0){ puzzle[j]=0; removed++; }
+    if(countSolutions(puzzle,2)!==1){       // perdrait l'unicité -> on annule
+      puzzle[i]=bi; if(j!==i) puzzle[j]=bj;
+    }else{
+      givens-=removed;
+    }
+  }
+  // Phase 2 : retrait simple (case par case) pour atteindre les cibles basses (Expert)
+  if(givens>targetGivens){
+    for(const i of shuffle([...Array(81).keys()])){
+      if(givens<=targetGivens) break;
+      if(puzzle[i]===0) continue;
+      const bi=puzzle[i]; puzzle[i]=0;
+      if(countSolutions(puzzle,2)!==1) puzzle[i]=bi;   // garde l'unicité
+      else givens--;
+    }
+  }
+  return puzzle;
+}
+
+/* ───────────────────────── État du jeu ───────────────────────── */
+const GIVENS = { facile:43, moyen:34, difficile:30, expert:25 };
+const LABELS = { facile:'Facile', moyen:'Moyen', difficile:'Difficile', expert:'Expert' };
+const SAVE_KEY = 'sudoku-nuc-v1';
+
+let S = {
+  diff:'facile',
+  solution:[],   // 81 — la solution complète
+  given:[],      // 81 — bool : case imposée
+  grid:[],       // 81 — valeurs courantes (0 = vide)
+  notes:[],      // 81 — masque 9 bits des annotations
+  sel:-1,        // case sélectionnée
+  noteMode:false,
+  solved:false
+};
+
+/* ───────────────────────── DOM ───────────────────────── */
+const boardEl = document.getElementById('board');
+const padEl   = document.getElementById('pad');
+const statusEl= document.getElementById('status');
+const noteBtn = document.getElementById('noteBtn');
+const cells = [];
+
+function buildBoard(){
+  boardEl.innerHTML='';
+  for(let i=0;i<81;i++){
+    const r=(i/9)|0, c=i%9;
+    const d=document.createElement('div');
+    d.className='cell';
+    if(c===2||c===5) d.classList.add('tr');
+    if(r===2||r===5) d.classList.add('tb');
+    if(c===8) d.classList.add('lc');
+    if(r===8) d.classList.add('lr');
+    d.addEventListener('click', ()=>selectCell(i));
+    boardEl.appendChild(d);
+    cells[i]=d;
+  }
+}
+
+function buildPad(){
+  padEl.innerHTML='';
+  for(let n=1;n<=9;n++){
+    const b=document.createElement('button');
+    b.dataset.n=n;
+    b.innerHTML = `${n}<span class="rem" data-rem="${n}"></span>`;
+    b.addEventListener('click', ()=>inputDigit(n));
+    padEl.appendChild(b);
+  }
+}
+
+/* ───────────────────────── Rendu ───────────────────────── */
+function render(){
+  const selVal = S.sel>=0 ? S.grid[S.sel] : 0;
+  const sr = S.sel>=0 ? (S.sel/9|0) : -1;
+  const sc = S.sel>=0 ? (S.sel%9) : -1;
+  const sb = S.sel>=0 ? boxOf(S.sel) : -1;
+
+  for(let i=0;i<81;i++){
+    const cell=cells[i];
+    const v=S.grid[i];
+    const r=(i/9|0), c=i%9, b=boxOf(i);
+    cell.className='cell';
+    if(c===2||c===5) cell.classList.add('tr');
+    if(r===2||r===5) cell.classList.add('tb');
+    if(c===8) cell.classList.add('lc');
+    if(r===8) cell.classList.add('lr');
+    if(S.given[i]) cell.classList.add('given');
+    if(S.solved) cell.classList.add('solved');
+
+    if(S.sel>=0){
+      if(r===sr||c===sc||b===sb) cell.classList.add('peer');
+      if(selVal!==0 && v===selVal) cell.classList.add('same');
+      if(i===S.sel) cell.classList.add('sel');
+    }
+
+    if(v!==0){
+      cell.textContent=v;
+    }else if(S.notes[i]){
+      let html='<div class="notes">';
+      for(let n=1;n<=9;n++) html += `<span>${ (S.notes[i] & (1<<(n-1))) ? n : '' }</span>`;
+      html+='</div>';
+      cell.innerHTML=html;
+    }else{
+      cell.textContent='';
+    }
+  }
+
+  // compteurs restants par chiffre + mode crayon
+  const counts=new Array(10).fill(0);
+  for(let i=0;i<81;i++) if(S.grid[i]) counts[S.grid[i]]++;
+  padEl.querySelectorAll('button').forEach(btn=>{
+    const n=+btn.dataset.n;
+    const rem=9-counts[n];
+    btn.querySelector('.rem').textContent = rem>0 ? rem : '';
+    btn.classList.toggle('done', rem<=0);
+    btn.classList.toggle('note-mode', S.noteMode);
+  });
+
+  noteBtn.classList.toggle('on', S.noteMode);
+
+  // état / progression
+  if(S.solved){
+    statusEl.textContent='Bravo ! Grille résolue 🎉';
+    statusEl.className='status win';
+  }else{
+    const left=S.grid.filter(x=>x===0).length;
+    if(left===0){
+      statusEl.textContent='Grille pleine — il reste des erreurs.';
+      statusEl.className='status warn';
+    }else{
+      statusEl.textContent=`Cases restantes : ${left}`;
+      statusEl.className='status';
+    }
+  }
+}
+
+/* ───────────────────────── Interactions ───────────────────────── */
+function selectCell(i){ S.sel=i; render(); }
+
+function inputDigit(n){
+  if(S.sel<0 || S.given[S.sel] || S.solved) return;
+  const i=S.sel;
+  if(S.noteMode){
+    if(S.grid[i]!==0) return;             // pas d'annotation sur une case déjà remplie
+    S.notes[i] ^= (1<<(n-1));             // bascule l'annotation
+  }else{
+    if(S.grid[i]===n){ S.grid[i]=0; }     // re-toucher le même chiffre = efface
+    else{
+      S.grid[i]=n;
+      S.notes[i]=0;
+      cleanPeerNotes(i,n);                // retire ce crayon des cases voisines
+    }
+    checkSolved();
+  }
+  save(); render();
+}
+
+function cleanPeerNotes(i,n){
+  const r=(i/9|0), c=i%9, b=boxOf(i), bit=1<<(n-1);
+  for(let k=0;k<81;k++){
+    if(k===i) continue;
+    if((k/9|0)===r || (k%9)===c || boxOf(k)===b) S.notes[k] &= ~bit;
+  }
+}
+
+function erase(){
+  if(S.sel<0 || S.given[S.sel] || S.solved) return;
+  S.grid[S.sel]=0; S.notes[S.sel]=0;
+  save(); render();
+}
+
+function checkSolved(){
+  for(let i=0;i<81;i++) if(S.grid[i]!==S.solution[i]) return;
+  S.solved=true;
+}
+
+/* ───────────────────────── Nouvelle partie ───────────────────────── */
+function inProgress(){
+  if(S.solved) return false;
+  for(let i=0;i<81;i++) if(!S.given[i] && (S.grid[i]!==0 || S.notes[i]!==0)) return true;
+  return false;
+}
+
+function newGame(diff, force){
+  if(!force && inProgress() && !confirm('Abandonner la partie en cours et en commencer une nouvelle ?')) return;
+  S.diff = diff;
+  document.querySelectorAll('.diff button').forEach(b=>b.classList.toggle('active', b.dataset.d===diff));
+  document.getElementById('diffLabel').textContent = LABELS[diff];
+  statusEl.textContent='Génération…'; statusEl.className='status';
+  // laisse le navigateur peindre « Génération… » avant le calcul
+  setTimeout(()=>{
+    const full = generateFull();
+    const puzzle = makePuzzle(full, GIVENS[diff]);
+    S.solution = full;
+    S.given = puzzle.map(v=>v!==0);
+    S.grid  = puzzle.slice();
+    S.notes = new Array(81).fill(0);
+    S.sel=-1; S.noteMode=false; S.solved=false;
+    save(); render();
+  }, 20);
+}
+
+/* ───────────────────────── Sauvegarde locale ───────────────────────── */
+function save(){
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      diff:S.diff, solution:S.solution, given:S.given,
+      grid:S.grid, notes:S.notes, solved:S.solved
+    }));
+  }catch(e){}
+}
+function load(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return false;
+    const d=JSON.parse(raw);
+    if(!d || !Array.isArray(d.solution) || d.solution.length!==81) return false;
+    S.diff = d.diff||'facile';
+    S.solution=d.solution; S.given=d.given; S.grid=d.grid;
+    S.notes=d.notes||new Array(81).fill(0);
+    S.solved=!!d.solved; S.sel=-1; S.noteMode=false;
+    document.querySelectorAll('.diff button').forEach(b=>b.classList.toggle('active', b.dataset.d===S.diff));
+    document.getElementById('diffLabel').textContent = LABELS[S.diff]||'Facile';
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ───────────────────────── Écouteurs ───────────────────────── */
+document.getElementById('diff').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  newGame(b.dataset.d, false);
+});
+noteBtn.addEventListener('click', ()=>{ S.noteMode=!S.noteMode; render(); });
+document.getElementById('eraseBtn').addEventListener('click', erase);
+document.getElementById('newBtn').addEventListener('click', ()=>newGame(S.diff, false));
+
+// Clavier (utile sur iPad avec clavier externe / Mac)
+document.addEventListener('keydown', e=>{
+  if(e.key>='1' && e.key<='9'){ inputDigit(+e.key); e.preventDefault(); }
+  else if(e.key==='Backspace' || e.key==='Delete' || e.key==='0'){ erase(); e.preventDefault(); }
+  else if(e.key==='n' || e.key==='N'){ S.noteMode=!S.noteMode; render(); }
+  else if(e.key.startsWith('Arrow') && S.sel>=0){
+    let r=(S.sel/9|0), c=S.sel%9;
+    if(e.key==='ArrowUp') r=(r+8)%9;
+    if(e.key==='ArrowDown') r=(r+1)%9;
+    if(e.key==='ArrowLeft') c=(c+8)%9;
+    if(e.key==='ArrowRight') c=(c+1)%9;
+    S.sel=r*9+c; render(); e.preventDefault();
+  }
+});
+
+/* ───────────────────────── Démarrage ───────────────────────── */
+buildBoard();
+buildPad();
+if(load()){ render(); }
+else{ newGame('facile', true); }
+</script>
+</body>
+</html>
