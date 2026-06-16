@@ -100,6 +100,7 @@
   .cell.same{ background:var(--same); }
   .cell.sel{ background:var(--sel); }
   .cell.solved{ color:var(--ok); }
+  .cell.wrong{ background:#fee2e2 !important; color:#dc2626 !important; font-weight:800; }
 
   /* Notes (petits chiffres 3x3) */
   .notes{
@@ -150,7 +151,7 @@
   /* Actions */
   .actions{
     width:var(--board);
-    display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;
+    display:grid; grid-template-columns:1fr 1fr; gap:8px;
     margin-top:12px;
   }
   .actions button{
@@ -190,6 +191,7 @@
   <div class="actions">
     <button id="noteBtn">✏️ Crayon</button>
     <button id="eraseBtn">⌫ Effacer</button>
+    <button id="checkBtn">✓ Vérifier</button>
     <button id="newBtn">＋ Nouvelle</button>
   </div>
 
@@ -310,7 +312,9 @@ let S = {
   notes:[],      // 81 — masque 9 bits des annotations
   sel:-1,        // case sélectionnée
   noteMode:false,
-  solved:false
+  solved:false,
+  wrong:[],      // 81 — bool : chiffre saisi faux (révélé par « Vérifier »)
+  msg:null       // message transitoire (résultat de « Vérifier »)
 };
 
 /* ───────────────────────── DOM ───────────────────────── */
@@ -365,6 +369,7 @@ function render(){
     if(r===8) cell.classList.add('lr');
     if(S.given[i]) cell.classList.add('given');
     if(S.solved) cell.classList.add('solved');
+    if(S.wrong[i]) cell.classList.add('wrong');
 
     if(S.sel>=0){
       if(r===sr||c===sc||b===sb) cell.classList.add('peer');
@@ -401,10 +406,13 @@ function render(){
   if(S.solved){
     statusEl.textContent='Bravo ! Grille résolue 🎉';
     statusEl.className='status win';
+  }else if(S.msg){
+    statusEl.textContent=S.msg.text;
+    statusEl.className='status '+(S.msg.cls||'');
   }else{
     const left=S.grid.filter(x=>x===0).length;
     if(left===0){
-      statusEl.textContent='Grille pleine — il reste des erreurs.';
+      statusEl.textContent='Grille pleine — touchez « Vérifier » pour voir les erreurs.';
       statusEl.className='status warn';
     }else{
       statusEl.textContent=`Cases restantes : ${left}`;
@@ -431,6 +439,7 @@ function inputDigit(n){
     }
     checkSolved();
   }
+  S.wrong[i]=false; S.msg=null;
   save(); render();
 }
 
@@ -445,12 +454,29 @@ function cleanPeerNotes(i,n){
 function erase(){
   if(S.sel<0 || S.given[S.sel] || S.solved) return;
   S.grid[S.sel]=0; S.notes[S.sel]=0;
+  S.wrong[S.sel]=false; S.msg=null;
   save(); render();
 }
 
 function checkSolved(){
   for(let i=0;i<81;i++) if(S.grid[i]!==S.solution[i]) return;
   S.solved=true;
+}
+
+/* ─────────── Bouton « Vérifier » : passe en rouge les chiffres saisis faux ─────────── */
+function checkErrors(){
+  if(S.solved) return;
+  let n=0, filled=0;
+  for(let i=0;i<81;i++){
+    if(S.given[i] || S.grid[i]===0){ S.wrong[i]=false; continue; }
+    filled++;
+    if(S.grid[i]!==S.solution[i]){ S.wrong[i]=true; n++; }
+    else S.wrong[i]=false;
+  }
+  if(filled===0)  S.msg={text:'Place d\'abord quelques chiffres 🙂', cls:''};
+  else if(n===0)  S.msg={text:'Aucune erreur 👍 — continue !', cls:'win'};
+  else            S.msg={text:n+(n>1?' erreurs en rouge':' erreur en rouge'), cls:'warn'};
+  render();
 }
 
 /* ───────────────────────── Nouvelle partie ───────────────────────── */
@@ -474,7 +500,8 @@ function newGame(diff, force){
     S.given = puzzle.map(v=>v!==0);
     S.grid  = puzzle.slice();
     S.notes = new Array(81).fill(0);
-    S.sel=-1; S.noteMode=false; S.solved=false;
+    S.wrong = new Array(81).fill(false);
+    S.sel=-1; S.noteMode=false; S.solved=false; S.msg=null;
     save(); render();
   }, 20);
 }
@@ -497,7 +524,8 @@ function load(){
     S.diff = d.diff||'facile';
     S.solution=d.solution; S.given=d.given; S.grid=d.grid;
     S.notes=d.notes||new Array(81).fill(0);
-    S.solved=!!d.solved; S.sel=-1; S.noteMode=false;
+    S.wrong=new Array(81).fill(false);
+    S.solved=!!d.solved; S.sel=-1; S.noteMode=false; S.msg=null;
     document.querySelectorAll('.diff button').forEach(b=>b.classList.toggle('active', b.dataset.d===S.diff));
     document.getElementById('diffLabel').textContent = LABELS[S.diff]||'Facile';
     return true;
@@ -511,6 +539,7 @@ document.getElementById('diff').addEventListener('click', e=>{
 });
 noteBtn.addEventListener('click', ()=>{ S.noteMode=!S.noteMode; render(); });
 document.getElementById('eraseBtn').addEventListener('click', erase);
+document.getElementById('checkBtn').addEventListener('click', checkErrors);
 document.getElementById('newBtn').addEventListener('click', ()=>newGame(S.diff, false));
 
 // Clavier (utile sur iPad avec clavier externe / Mac)
